@@ -15,6 +15,9 @@
     <!-- Load Babel (to process JSX in the browser) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Load YouTube Iframe Player API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+
     <style>
         /* Custom Keyframe Animation */
         @keyframes fadeIn {
@@ -28,6 +31,13 @@
             /* Using a common CJK font family for better display */
             font-family: "Microsoft JhengHei", "Heiti TC", sans-serif;
             background-color: #f3f4f6;
+        }
+        /* Style for the fixed player container */
+        .player-container {
+            transition: transform 0.5s ease-in-out;
+        }
+        .player-minimized {
+            transform: translateY(calc(100% - 40px)); /* Hide most of the player, only control bar visible */
         }
     </style>
 </head>
@@ -90,6 +100,12 @@
         );
         const VolumeX = (props) => (
             <IconBase {...props}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></IconBase>
+        );
+        const Video = (props) => (
+            <IconBase {...props}><path d="m22 8-6 4 6 4V8Z"/><path d="M14 2c-3.3 0-6 2.7-6 6v8c0 3.3 2.7 6 6 6h4c3.3 0 6-2.7 6-6V8c0-3.3-2.7-6-6-6Z"/></IconBase>
+        );
+        const Pause = (props) => (
+            <IconBase {...props}><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></IconBase>
         );
 
         // --- Main Game Logic ---
@@ -195,8 +211,13 @@
             const [step, setStep] = useState(0);
             const [gameStatus, setGameStatus] = useState('start'); // 'start', 'playing', 'finished'
             const [isFullscreen, setIsFullscreen] = useState(false);
-            const [isMusicPlaying, setIsMusicPlaying] = useState(true); 
-            const audioRef = useRef(null);
+            
+            // --- YouTube Player States ---
+            const playerRef = useRef(null);
+            const videoId = 'r34IHFI-29c';
+            const [isPlayerMinimized, setIsPlayerMinimized] = useState(true); // 預設最小化
+            const [isPlayerReady, setIsPlayerReady] = useState(false);
+            const [isMusicPlaying, setIsMusicPlaying] = useState(false); // 預設不播放
 
             const currentCelebrity = gameData[currentRound];
 
@@ -205,42 +226,68 @@
                 setGameData(shuffleArray(sourceGameData));
             }, []);
 
-            // --- Music Functionality ---
+            // --- YouTube Player Functionality ---
             useEffect(() => {
-                // Using a stable MP3 link from Internet Archive (Erik Satie - Gymnopédie No.1)
-                audioRef.current = new Audio("https://ia800504.us.archive.org/33/items/ErikSatieGymnopedieNo1/ErikSatieGymnopedieNo1.mp3");
-                audioRef.current.loop = true;
-                audioRef.current.volume = 0.5;
-                
-                // Cleanup function
-                return () => {
-                    if (audioRef.current) {
-                        audioRef.current.pause();
-                        audioRef.current = null;
-                    }
-                };
-            }, []);
-
-            const toggleMusic = () => {
-                if (!audioRef.current) return;
-                
-                if (isMusicPlaying) {
-                    audioRef.current.pause();
-                } else {
-                    audioRef.current.play().catch(e => console.log("Audio play error:", e));
+                // Check if the YouTube Iframe API is loaded
+                if (typeof window.YT !== 'undefined' && !playerRef.current) {
+                    initializePlayer();
+                } else if (typeof window.YT === 'undefined') {
+                    // If not loaded yet, set the global function for when it is ready
+                    window.onYouTubeIframeAPIReady = function() {
+                        initializePlayer();
+                    };
                 }
-                setIsMusicPlaying(!isMusicPlaying);
+
+                function initializePlayer() {
+                    // Prevent creating multiple players
+                    if (document.getElementById('youtube-player') && !playerRef.current) {
+                        playerRef.current = new window.YT.Player('youtube-player', {
+                            videoId: videoId,
+                            playerVars: {
+                                // 0: Disabled, 1: Enabled
+                                'autoplay': 0, // Must be 0 initially for modern browsers
+                                'controls': 1,
+                                'loop': 1,
+                                'playlist': videoId, // Required for loop to work
+                                'modestbranding': 1,
+                                'rel': 0, // Do not show related videos
+                            },
+                            events: {
+                                'onReady': onPlayerReady,
+                                'onStateChange': onPlayerStateChange
+                            }
+                        });
+                    }
+                }
+
+                function onPlayerReady(event) {
+                    setIsPlayerReady(true);
+                    // Set initial volume to 50%
+                    event.target.setVolume(50);
+                }
+
+                function onPlayerStateChange(event) {
+                    // Update state based on player status
+                    if (event.data === window.YT.PlayerState.PLAYING) {
+                        setIsMusicPlaying(true);
+                    } else if (event.data === window.YT.PlayerState.PAUSED || event.data === window.YT.PlayerState.ENDED) {
+                        setIsMusicPlaying(false);
+                    }
+                }
+            }, [videoId]); // Depend on videoId
+
+            const togglePlayback = () => {
+                if (!playerRef.current || !isPlayerReady) return;
+
+                if (isMusicPlaying) {
+                    playerRef.current.pauseVideo();
+                } else {
+                    playerRef.current.playVideo();
+                }
             };
 
-            const handleStartGame = () => {
-                setGameStatus('playing');
-                // Play music after user interaction
-                if (audioRef.current) {
-                    audioRef.current.play().catch(e => {
-                        console.log("Auto-play prevented:", e);
-                        setIsMusicPlaying(false); // Update state if auto-play fails
-                    });
-                }
+            const togglePlayerVisibility = () => {
+                setIsPlayerMinimized(!isPlayerMinimized);
             };
 
             // --- Fullscreen Functionality ---
@@ -268,6 +315,14 @@
             }, []);
 
             // --- Game Flow Logic ---
+            const handleStartGame = () => {
+                setGameStatus('playing');
+                // Auto-play the video when the game starts (first user interaction)
+                if (playerRef.current && isPlayerReady) {
+                    playerRef.current.playVideo();
+                }
+            };
+
             const handleNextStep = () => {
                 if (step < 2) {
                     setStep(step + 1);
@@ -293,6 +348,12 @@
                 setGameStatus('playing');
                 // Re-shuffle the data when restarting
                 setGameData(shuffleArray(sourceGameData));
+                
+                // Replay video from start
+                if (playerRef.current && isPlayerReady) {
+                    playerRef.current.seekTo(0);
+                    playerRef.current.playVideo();
+                }
             };
 
             const renderControls = () => {
@@ -360,11 +421,11 @@
             const TopRightControls = ({ isDarkBg }) => (
                 <div className="absolute top-4 right-4 flex gap-2 z-50">
                      <button 
-                        onClick={toggleMusic}
+                        onClick={togglePlayback}
                         className={`p-2 rounded-full transition shadow-sm backdrop-blur-sm ${isDarkBg ? 'bg-white/20 text-white hover:bg-white/40' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                        title={isMusicPlaying ? "關閉音樂" : "開啟音樂"}
+                        title={isMusicPlaying ? "暫停背景音樂" : "播放背景音樂"}
                     >
-                        {isMusicPlaying ? <Volume2 size={24} /> : <VolumeX size={24} />}
+                        {isMusicPlaying ? <Pause size={24} /> : <Play size={24} />}
                     </button>
                     <button 
                         onClick={toggleFullScreen}
@@ -394,7 +455,7 @@
                                     onClick={handleStartGame}
                                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xl font-bold py-4 px-6 rounded-xl transition transform hover:scale-105 flex items-center justify-center gap-2"
                                 >
-                                    <Play size={24} /> 開始遊戲
+                                    <Play size={24} /> 開始遊戲 (將同時播放背景音樂)
                                 </button>
                             </div>
                         </div>
@@ -490,6 +551,49 @@
             return (
                 <React.Fragment>
                     {renderScreen()}
+
+                    {/* --- YouTube Player Panel (Fixed at Bottom Right) --- */}
+                    <div 
+                        className={`player-container fixed bottom-0 right-0 w-80 shadow-2xl bg-white rounded-tl-xl overflow-hidden z-40 border border-gray-200 ${isPlayerMinimized ? 'player-minimized' : ''}`}
+                    >
+                        {/* Control Bar (Always visible) */}
+                        <div 
+                            className="flex items-center justify-between p-2 bg-indigo-600 text-white cursor-pointer"
+                            onClick={togglePlayerVisibility}
+                        >
+                            <span className="flex items-center gap-2 font-bold text-sm">
+                                <Video size={18} />
+                                遊戲背景音 (YouTube)
+                            </span>
+                            <button
+                                title={isPlayerMinimized ? "還原播放器" : "最小化播放器"}
+                                className="p-1 rounded-full hover:bg-white/20 transition"
+                            >
+                                {isPlayerMinimized ? <Maximize size={18} /> : <Minimize size={18} />}
+                            </button>
+                        </div>
+                        
+                        {/* Video Content */}
+                        <div className="w-full aspect-video">
+                            {/* The iframe placeholder is where the YouTube player will be injected by the API */}
+                            <div id="youtube-player" className="w-full h-full"></div>
+                        </div>
+                        
+                        {/* Playback Control (Optional, since controls are on the player) */}
+                        <div className="p-4 flex justify-center border-t border-gray-100">
+                            <button
+                                onClick={togglePlayback}
+                                disabled={!isPlayerReady}
+                                className={`flex items-center gap-2 py-2 px-4 rounded-full text-sm font-medium transition ${
+                                    isPlayerPlaying
+                                        ? 'bg-yellow-500 text-white hover:bg-yellow-600'
+                                        : 'bg-green-500 text-white hover:bg-green-600'
+                                }`}
+                            >
+                                {isPlayerReady ? (isMusicPlaying ? '暫停播放' : '開始播放') : '載入中...'}
+                            </button>
+                        </div>
+                    </div>
                 </React.Fragment>
             );
         };
