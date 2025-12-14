@@ -1,25 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>猜猜我是誰 - 團體互動遊戲</title>
     
-    <!-- Load Tailwind CSS (Styles) -->
+    <!-- 引入 Tailwind CSS (樣式) -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Load React and ReactDOM (Core Framework) -->
+    <!-- 引入 React 和 ReactDOM (核心框架) -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- Load Babel (to process JSX in the browser) -->
+    <!-- 引入 Babel (讓瀏覽器看懂 JSX) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Load YouTube Iframe Player API -->
-    <script src="https://www.youtube.com/iframe_api"></script>
-
     <style>
-        /* Custom Keyframe Animation */
+        /* 自定義動畫 */
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -28,16 +25,16 @@
             animation: fadeIn 0.5s ease-out forwards;
         }
         body {
-            /* Using a common CJK font family for better display */
             font-family: "Microsoft JhengHei", "Heiti TC", sans-serif;
             background-color: #f3f4f6;
         }
-        /* Style for the fixed player container */
-        .player-container {
-            transition: transform 0.5s ease-in-out;
+        /* 確保全螢幕按鈕位於影片播放器之上 */
+        .z-50 {
+            z-index: 50;
         }
-        .player-minimized {
-            transform: translateY(calc(100% - 40px)); /* Hide most of the player, only control bar visible */
+        /* 影片播放器 z-index */
+        .z-40 {
+            z-index: 40;
         }
     </style>
 </head>
@@ -47,7 +44,10 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- Icon Components (Lucide Icons simplified) ---
+        // 設定 YouTube 影片 ID
+        const YOUTUBE_VIDEO_ID = "r34IHFI-29c";
+
+        // --- 圖示組件 ---
         const IconBase = ({ size = 24, className = "", children }) => (
             <svg 
                 xmlns="http://www.w3.org/2000/svg" 
@@ -95,33 +95,60 @@
         const Minimize = (props) => (
             <IconBase {...props}><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></IconBase>
         );
-        const Volume2 = (props) => (
-            <IconBase {...props}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></IconBase>
-        );
-        const VolumeX = (props) => (
-            <IconBase {...props}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></IconBase>
-        );
-        const Video = (props) => (
-            <IconBase {...props}><path d="m22 8-6 4 6 4V8Z"/><path d="M14 2c-3.3 0-6 2.7-6 6v8c0 3.3 2.7 6 6 6h4c3.3 0 6-2.7 6-6V8c0-3.3-2.7-6-6-6Z"/></IconBase>
-        );
-        const Pause = (props) => (
-            <IconBase {...props}><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></IconBase>
-        );
 
-        // --- Main Game Logic ---
+        // --- 影片播放器組件 ---
+        const YoutubePlayer = ({ isMinimized, onToggleMinimize, videoId, gameStatus }) => {
+            // 只有在遊戲進行中才顯示播放器
+            if (gameStatus === 'start' || gameStatus === 'finished') {
+                return null;
+            }
+
+            // autoplay=1 讓使用者點擊後持續播放
+            // loop=1, playlist=${videoId} 確保影片結束後會循環播放
+            const videoUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&loop=1&playlist=${videoId}&controls=1&modestbranding=1`;
+
+            return (
+                <div 
+                    className={`fixed bottom-4 right-4 z-40 transition-all duration-300 shadow-2xl rounded-xl overflow-hidden ${
+                        isMinimized 
+                            ? 'w-24 h-[60px] sm:w-36 sm:h-[80px] md:w-48 md:h-[110px]' 
+                            : 'w-[90vw] h-[50vw] max-w-lg max-h-[400px]'
+                    }`}
+                >
+                    <div className={`w-full h-full relative ${isMinimized ? 'opacity-80 hover:opacity-100' : ''}`}>
+                        <iframe
+                            className="w-full h-full"
+                            src={videoUrl}
+                            frameBorder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            title="YouTube 影片播放器 (遊戲背景音樂/持續播放)"
+                        ></iframe>
+                        
+                        {/* 覆蓋按鈕用於最小化/最大化 */}
+                        <button
+                            onClick={onToggleMinimize}
+                            className={`absolute top-0 left-0 w-full h-full flex items-center justify-center p-2 backdrop-blur-sm transition-all duration-300 ${
+                                isMinimized ? 'bg-black/40 hover:bg-black/60' : 'bg-black/0 hover:bg-black/10'
+                            }`}
+                            title={isMinimized ? "展開影片" : "縮小影片"}
+                        >
+                            {isMinimized ? (
+                                <Maximize size={28} className="text-white transform transition-transform duration-300" />
+                            ) : (
+                                <Minimize size={28} className="text-white absolute top-2 right-2 p-1 bg-black/50 rounded-full hover:bg-black/70" />
+                            )}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+
+        // --- 主程式邏輯 ---
         const GuessWhoGame = () => {
-            // Shuffle function (Fisher-Yates Shuffle)
-            const shuffleArray = (array) => {
-                const newArray = [...array];
-                for (let i = newArray.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-                }
-                return newArray;
-            };
-
-            // Source data for game questions (Celebrity info and photos)
-            const sourceGameData = [
+            // 遊戲資料設定
+            const gameData = [
                 {
                     id: 1,
                     name: "金城武",
@@ -194,103 +221,28 @@
                         { url: "https://v3-statics.mirrormedia.mg/images/20230313175709-54f48cc7527b03277e4ca036d3265f8a-w1600.jpg", label: "提示 2：現在照片" }
                     ]
                 },
+                // 新增賀一航的題目
                 {
                     id: 9,
                     name: "賀一航",
                     photos: [
-                        { url: "https://s.yimg.com/ny/api/res/1.2/sI_8a7DqE2jpB4iUD1ktbQ--/YXBwaWQ9aGlnaGxhbmRlcjt3PTY0MDtoPTg1Mw--/https://media.zenfs.com/zh-Hant-TW/homerun/www.nownews.com/e72074c040421fa69efca8f1cd45c59c", label: "題目：過去照片 (1)" },
+                        { url: "https://cdn2.ettoday.net/images/1208/d1208932.jpg", label: "題目：過去照片 (1)" },
                         { url: "https://uc.udn.com.tw/photo/2024/08/09/105/30266127.jpg", label: "提示 1：過去照片 (2)" },
                         { url: "https://s.yimg.com/ny/api/res/1.2/_eOuIN3MG5d.O9nJMhlq4w--/YXBwaWQ9aGlnaGxhbmRlcjt3PTY0MDtoPTQyNg--/https://media.zenfs.com/zh-Hant-TW/homerun/ftvn.com.tw/bb3586126f3d210d655109208f446735", label: "提示 2：現在照片" }
                     ]
                 }
             ];
 
-            // State management
-            const [gameData, setGameData] = useState(sourceGameData);
+            // 狀態管理
             const [currentRound, setCurrentRound] = useState(0);
             const [step, setStep] = useState(0);
-            const [gameStatus, setGameStatus] = useState('start'); // 'start', 'playing', 'finished'
+            const [gameStatus, setGameStatus] = useState('start');
             const [isFullscreen, setIsFullscreen] = useState(false);
-            
-            // --- YouTube Player States ---
-            const playerRef = useRef(null);
-            const videoId = 'r34IHFI-29c';
-            const [isPlayerMinimized, setIsPlayerMinimized] = useState(true); // 預設最小化
-            const [isPlayerReady, setIsPlayerReady] = useState(false);
-            const [isMusicPlaying, setIsMusicPlaying] = useState(false); // 預設不播放
+            const [isPlayerMinimized, setIsPlayerMinimized] = useState(true); // 影片播放器預設最小化
 
             const currentCelebrity = gameData[currentRound];
 
-            // Shuffle on initial load
-            useEffect(() => {
-                setGameData(shuffleArray(sourceGameData));
-            }, []);
-
-            // --- YouTube Player Functionality ---
-            useEffect(() => {
-                // Check if the YouTube Iframe API is loaded
-                if (typeof window.YT !== 'undefined' && !playerRef.current) {
-                    initializePlayer();
-                } else if (typeof window.YT === 'undefined') {
-                    // If not loaded yet, set the global function for when it is ready
-                    window.onYouTubeIframeAPIReady = function() {
-                        initializePlayer();
-                    };
-                }
-
-                function initializePlayer() {
-                    // Prevent creating multiple players
-                    if (document.getElementById('youtube-player') && !playerRef.current) {
-                        playerRef.current = new window.YT.Player('youtube-player', {
-                            videoId: videoId,
-                            playerVars: {
-                                // 0: Disabled, 1: Enabled
-                                'autoplay': 0, // Must be 0 initially for modern browsers
-                                'controls': 1,
-                                'loop': 1,
-                                'playlist': videoId, // Required for loop to work
-                                'modestbranding': 1,
-                                'rel': 0, // Do not show related videos
-                            },
-                            events: {
-                                'onReady': onPlayerReady,
-                                'onStateChange': onPlayerStateChange
-                            }
-                        });
-                    }
-                }
-
-                function onPlayerReady(event) {
-                    setIsPlayerReady(true);
-                    // Set initial volume to 50%
-                    event.target.setVolume(50);
-                }
-
-                function onPlayerStateChange(event) {
-                    // Update state based on player status
-                    if (event.data === window.YT.PlayerState.PLAYING) {
-                        setIsMusicPlaying(true);
-                    } else if (event.data === window.YT.PlayerState.PAUSED || event.data === window.YT.PlayerState.ENDED) {
-                        setIsMusicPlaying(false);
-                    }
-                }
-            }, [videoId]); // Depend on videoId
-
-            const togglePlayback = () => {
-                if (!playerRef.current || !isPlayerReady) return;
-
-                if (isMusicPlaying) {
-                    playerRef.current.pauseVideo();
-                } else {
-                    playerRef.current.playVideo();
-                }
-            };
-
-            const togglePlayerVisibility = () => {
-                setIsPlayerMinimized(!isPlayerMinimized);
-            };
-
-            // --- Fullscreen Functionality ---
+            // --- 全螢幕功能 ---
             const toggleFullScreen = () => {
                 if (!document.fullscreenElement) {
                     document.documentElement.requestFullscreen().catch(err => {
@@ -314,13 +266,11 @@
                 };
             }, []);
 
-            // --- Game Flow Logic ---
+            // --- 遊戲邏輯 ---
             const handleStartGame = () => {
                 setGameStatus('playing');
-                // Auto-play the video when the game starts (first user interaction)
-                if (playerRef.current && isPlayerReady) {
-                    playerRef.current.playVideo();
-                }
+                // 遊戲開始時，可以設定播放器為最大化，讓使用者點擊播放
+                setIsPlayerMinimized(false); 
             };
 
             const handleNextStep = () => {
@@ -337,6 +287,8 @@
                 if (currentRound < gameData.length - 1) {
                     setCurrentRound(currentRound + 1);
                     setStep(0);
+                    // 切換題目時，將播放器最小化，避免遮擋畫面
+                    setIsPlayerMinimized(true);
                 } else {
                     setGameStatus('finished');
                 }
@@ -346,20 +298,11 @@
                 setCurrentRound(0);
                 setStep(0);
                 setGameStatus('playing');
-                // Re-shuffle the data when restarting
-                setGameData(shuffleArray(sourceGameData));
-                
-                // Replay video from start
-                if (playerRef.current && isPlayerReady) {
-                    playerRef.current.seekTo(0);
-                    playerRef.current.playVideo();
-                }
+                setIsPlayerMinimized(false); // 重新開始後，提示使用者播放器
             };
 
             const renderControls = () => {
-                // Before final hint (Step 0 or 1)
                 if (step < 2) {
-                    const nextStepLabel = step === 0 ? "下一個提示（看過去照片 2）" : "下一個提示（看現在照片）";
                     return (
                         <div className="grid grid-cols-1 gap-4 mt-4">
                             <button
@@ -367,7 +310,7 @@
                                 className="flex items-center justify-center gap-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-bold py-4 px-6 rounded-xl transition border border-yellow-300 text-lg shadow-sm"
                             >
                                 <Eye size={24} />
-                                {nextStepLabel}
+                                {step === 0 ? "下一個提示（看過去照片 2）" : "下一個提示（看現在照片）"}
                             </button>
                             
                             <button
@@ -381,7 +324,6 @@
                     );
                 }
                 
-                // Final hint shown (Step 2)
                 if (step === 2) {
                     return (
                         <div className="grid grid-cols-1 gap-4 mt-4">
@@ -399,7 +341,6 @@
                     );
                 }
 
-                // Answer revealed (Step 3)
                 return (
                     <div className="text-center animate-fade-in-up">
                         <h2 className="text-3xl font-bold text-gray-800 mb-2">答案是：{currentCelebrity.name}</h2>
@@ -415,18 +356,11 @@
                 );
             };
 
-            // --- UI Rendering ---
+            // --- 畫面渲染 ---
 
-            // Shared component for music and fullscreen controls
-            const TopRightControls = ({ isDarkBg }) => (
+            // 全螢幕按鈕共用區塊
+            const TopRightControls = ({ isDarkBg, toggleFullScreen, isFullscreen }) => (
                 <div className="absolute top-4 right-4 flex gap-2 z-50">
-                     <button 
-                        onClick={togglePlayback}
-                        className={`p-2 rounded-full transition shadow-sm backdrop-blur-sm ${isDarkBg ? 'bg-white/20 text-white hover:bg-white/40' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                        title={isMusicPlaying ? "暫停背景音樂" : "播放背景音樂"}
-                    >
-                        {isMusicPlaying ? <Pause size={24} /> : <Play size={24} />}
-                    </button>
                     <button 
                         onClick={toggleFullScreen}
                         className={`p-2 rounded-full transition shadow-sm backdrop-blur-sm ${isDarkBg ? 'bg-white/20 text-white hover:bg-white/40' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
@@ -437,12 +371,13 @@
                 </div>
             );
 
-            // Render different screens based on game status
+
+            // 依據狀態渲染不同的畫面
             const renderScreen = () => {
                 if (gameStatus === 'start') {
                     return (
                         <div className="min-h-screen bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center p-4 relative overflow-hidden">
-                            <TopRightControls isDarkBg={true} />
+                            <TopRightControls isDarkBg={true} toggleFullScreen={toggleFullScreen} isFullscreen={isFullscreen} />
                             <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center z-10">
                                 <HelpCircle className="w-20 h-20 text-indigo-500 mx-auto mb-6" />
                                 <h1 className="text-4xl font-bold text-gray-800 mb-4">猜猜我是誰？</h1>
@@ -455,7 +390,7 @@
                                     onClick={handleStartGame}
                                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xl font-bold py-4 px-6 rounded-xl transition transform hover:scale-105 flex items-center justify-center gap-2"
                                 >
-                                    <Play size={24} /> 開始遊戲 (將同時播放背景音樂)
+                                    <Play size={24} /> 開始遊戲 (請點擊右下方影片播放)
                                 </button>
                             </div>
                         </div>
@@ -465,7 +400,7 @@
                 if (gameStatus === 'finished') {
                     return (
                         <div className="min-h-screen bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center p-4 relative">
-                            <TopRightControls isDarkBg={true} />
+                            <TopRightControls isDarkBg={true} toggleFullScreen={toggleFullScreen} isFullscreen={isFullscreen} />
                             <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
                                 <CheckCircle className="w-20 h-20 text-green-500 mx-auto mb-6" />
                                 <h1 className="text-3xl font-bold text-gray-800 mb-4">遊戲結束！</h1>
@@ -484,7 +419,7 @@
                 // Playing State
                 return (
                     <div className="min-h-screen bg-gray-100 flex flex-col items-center py-8 px-4 font-sans relative">
-                        <TopRightControls isDarkBg={false} />
+                        <TopRightControls isDarkBg={false} toggleFullScreen={toggleFullScreen} isFullscreen={isFullscreen} />
 
                         <div className="w-full max-w-lg mb-6 flex justify-between items-center text-gray-500 font-medium mt-8 sm:mt-0">
                             <span>第 {currentRound + 1} 題 / 共 {gameData.length} 題</span>
@@ -498,12 +433,12 @@
 
                         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-200">
                             <div className="relative bg-gray-900 h-96 w-full flex items-center justify-center group">
+                                {/* 圖片顯示 */}
                                 <img 
                                     src={currentCelebrity.photos[Math.min(step, 2)].url} 
                                     alt="Celebrity" 
                                     className="w-full h-full object-contain transition-opacity duration-500"
-                                    // Fallback placeholder image in case of broken URL
-                                    onerror="this.onerror=null;this.src='https://placehold.co/600x400/374151/f3f4f6?text=Image+Loading+Error';"
+                                    onError={(e) => { e.target.onerror = null; e.target.src="https://placehold.co/400x400/FF5733/FFFFFF?text=圖片載入失敗" }}
                                 />
                                 
                                 <div className="absolute top-4 left-4 bg-black/60 text-white px-3 py-1 rounded-full text-sm font-bold backdrop-blur-sm flex items-center gap-2">
@@ -512,8 +447,8 @@
                                 </div>
 
                                 {step === 3 && (
-                                    <div className="absolute inset-0 bg-black/40 flex items-end justify-center pb-10 animate-fade-in-up">
-                                        <div className="bg-green-500 text-white text-4xl font-bold px-8 py-4 rounded-xl shadow-lg transform scale-105">
+                                    <div className="absolute inset-0 bg-black/40 flex items-end justify-center pb-10">
+                                        <div className="bg-green-500 text-white text-4xl font-bold px-8 py-4 rounded-xl shadow-lg transform scale-110 animate-bounce">
                                             {currentCelebrity.name}
                                         </div>
                                     </div>
@@ -544,6 +479,14 @@
                                 提示：根據畫面上的照片，讓大家猜猜看是誰，猜不出來就按提示！
                             </div>
                         )}
+
+                        {/* YouTube 播放器 */}
+                        <YoutubePlayer 
+                            videoId={YOUTUBE_VIDEO_ID} 
+                            isMinimized={isPlayerMinimized} 
+                            onToggleMinimize={() => setIsPlayerMinimized(!isPlayerMinimized)} 
+                            gameStatus={gameStatus}
+                        />
                     </div>
                 );
             };
@@ -551,49 +494,6 @@
             return (
                 <React.Fragment>
                     {renderScreen()}
-
-                    {/* --- YouTube Player Panel (Fixed at Bottom Right) --- */}
-                    <div 
-                        className={`player-container fixed bottom-0 right-0 w-80 shadow-2xl bg-white rounded-tl-xl overflow-hidden z-40 border border-gray-200 ${isPlayerMinimized ? 'player-minimized' : ''}`}
-                    >
-                        {/* Control Bar (Always visible) */}
-                        <div 
-                            className="flex items-center justify-between p-2 bg-indigo-600 text-white cursor-pointer"
-                            onClick={togglePlayerVisibility}
-                        >
-                            <span className="flex items-center gap-2 font-bold text-sm">
-                                <Video size={18} />
-                                遊戲背景音 (YouTube)
-                            </span>
-                            <button
-                                title={isPlayerMinimized ? "還原播放器" : "最小化播放器"}
-                                className="p-1 rounded-full hover:bg-white/20 transition"
-                            >
-                                {isPlayerMinimized ? <Maximize size={18} /> : <Minimize size={18} />}
-                            </button>
-                        </div>
-                        
-                        {/* Video Content */}
-                        <div className="w-full aspect-video">
-                            {/* The iframe placeholder is where the YouTube player will be injected by the API */}
-                            <div id="youtube-player" className="w-full h-full"></div>
-                        </div>
-                        
-                        {/* Playback Control (Optional, since controls are on the player) */}
-                        <div className="p-4 flex justify-center border-t border-gray-100">
-                            <button
-                                onClick={togglePlayback}
-                                disabled={!isPlayerReady}
-                                className={`flex items-center gap-2 py-2 px-4 rounded-full text-sm font-medium transition ${
-                                    isPlayerPlaying
-                                        ? 'bg-yellow-500 text-white hover:bg-yellow-600'
-                                        : 'bg-green-500 text-white hover:bg-green-600'
-                                }`}
-                            >
-                                {isPlayerReady ? (isMusicPlaying ? '暫停播放' : '開始播放') : '載入中...'}
-                            </button>
-                        </div>
-                    </div>
                 </React.Fragment>
             );
         };
